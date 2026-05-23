@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .analytics import build_feature_frame, export_features_csv, export_rows_csv
+from .analytics import build_feature_frame, export_equity_curve_csv, export_features_csv, export_rows_csv
 from .backtest import run_regime_backtest
 from .data_sources import load_market_data
 from .regime import build_portfolio_tilts, classify_regimes
@@ -17,11 +17,13 @@ def run_build(days: int, seed: int, out_dir: Path, data_source: str, csv_file: P
     frame = build_feature_frame(rows)
     regimes = classify_regimes(frame)
     tilts = build_portfolio_tilts(regimes)
-    backtest = run_regime_backtest(frame, tilts)
+    result = run_regime_backtest(frame, tilts)
+    backtest = result.report
 
     out_dir.mkdir(parents=True, exist_ok=True)
     export_rows_csv(rows, out_dir / "market_data.csv")
     export_features_csv(frame, out_dir / "feature_frame.csv")
+    export_equity_curve_csv(result.equity_curve, out_dir / "equity_curve.csv")
 
     report = {
         "data_source": loaded.source_used,
@@ -49,7 +51,8 @@ def run_demo(days: int, seed: int, data_source: str, csv_file: Path | None) -> N
     frame = build_feature_frame(rows)
     regimes = classify_regimes(frame)
     tilts = build_portfolio_tilts(regimes)
-    backtest = run_regime_backtest(frame, tilts)
+    result = run_regime_backtest(frame, tilts)
+    bt = result.report
 
     print("Data source:", loaded.source_used)
     print("Data note:", loaded.note)
@@ -57,9 +60,23 @@ def run_demo(days: int, seed: int, data_source: str, csv_file: Path | None) -> N
     print("Regime:", regimes[-1].regime)
     print("Confidence:", regimes[-1].confidence)
     print("Recommended tilt:", tilts[-1])
-    print("Backtest CAGR:", backtest.cagr)
-    print("Backtest Sharpe:", backtest.sharpe)
-    print("Backtest Max Drawdown:", backtest.max_drawdown)
+    print()
+    print("── Strategy ──────────────────────────")
+    print(f"  CAGR:             {bt.cagr:+.2%}")
+    print(f"  Sharpe:           {bt.sharpe:.3f}")
+    print(f"  Max Drawdown:     {bt.max_drawdown:.2%}")
+    print(f"  Ann. Volatility:  {bt.annualized_volatility:.2%}")
+    print()
+    print("── Benchmark ─────────────────────────")
+    print(f"  CAGR:             {bt.benchmark_cagr:+.2%}")
+    print(f"  Sharpe:           {bt.benchmark_sharpe:.3f}")
+    print(f"  Max Drawdown:     {bt.benchmark_max_drawdown:.2%}")
+    print()
+    print("── Relative ──────────────────────────")
+    print(f"  Alpha:            {bt.alpha:+.4f}")
+    print(f"  Beta:             {bt.beta:.4f}")
+    print(f"  Info Ratio:       {bt.information_ratio:.4f}")
+    print(f"  Excess Return:    {bt.excess_return:+.2%}")
 
 
 def build_parser() -> argparse.ArgumentParser:

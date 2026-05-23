@@ -54,17 +54,40 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("tilts", snapshot)
         self.assertIn("backtest", snapshot)
         self.assertIn("meta", snapshot)
+        self.assertIn("equity_curve", snapshot)
         self.assertIn("regime", snapshot["latest"])
+        # benchmark fields present
+        self.assertIn("benchmark_cagr", snapshot["backtest"])
+        self.assertIn("alpha", snapshot["backtest"])
+        self.assertIn("information_ratio", snapshot["backtest"])
 
     def test_backtest_metrics_in_range(self) -> None:
         rows = generate_market_data(days=300, seed=9)
         features = build_feature_frame(rows)
         regimes = classify_regimes(features)
         tilts = build_portfolio_tilts(regimes)
-        report = run_regime_backtest(features, tilts)
+        result = run_regime_backtest(features, tilts)
+        report = result.report
 
         self.assertGreaterEqual(report.annualized_volatility, 0.0)
         self.assertLessEqual(report.max_drawdown, 0.0)
+        self.assertGreaterEqual(report.benchmark_volatility, 0.0)
+        self.assertLessEqual(report.benchmark_max_drawdown, 0.0)
+        # beta should be a finite real number
+        self.assertFalse(report.beta != report.beta)  # NaN check
+
+    def test_equity_curve_structure(self) -> None:
+        rows = generate_market_data(days=100, seed=3)
+        features = build_feature_frame(rows)
+        regimes = classify_regimes(features)
+        tilts = build_portfolio_tilts(regimes)
+        result = run_regime_backtest(features, tilts)
+
+        self.assertEqual(len(result.equity_curve), len(features))
+        point = result.equity_curve[-1]
+        self.assertAlmostEqual(point.strategy_equity, 1.0 + result.report.total_return, places=3)
+        self.assertIn(point.regime, {"RISK_ON", "TRANSITION", "RISK_OFF"})
+        self.assertLessEqual(point.strategy_drawdown, 0.0001)  # drawdown ≤ 0 at all times
 
 
 if __name__ == "__main__":

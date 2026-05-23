@@ -4,8 +4,12 @@ from dataclasses import asdict
 import csv
 from pathlib import Path
 from statistics import mean, pstdev
+from typing import TYPE_CHECKING
 
 from .synthetic_data import MarketRow
+
+if TYPE_CHECKING:
+    from .backtest import EquityCurvePoint
 
 
 def _pct_change(values: list[float]) -> list[float | None]:
@@ -88,4 +92,23 @@ def export_features_csv(frame: list[dict[str, float | str | None]], output_file:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(frame)
+
+
+def export_equity_curve_csv(curve: list[EquityCurvePoint], output_file: Path) -> None:
+    """Export day-by-day strategy vs benchmark equity curve for charting."""
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["day", "strategy_equity", "benchmark_equity", "strategy_drawdown", "benchmark_drawdown", "regime"]
+    with output_file.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for point in curve:
+            writer.writerow({
+                "day": point.day,
+                "strategy_equity": point.strategy_equity,
+                "benchmark_equity": point.benchmark_equity,
+                "strategy_drawdown": point.strategy_drawdown,
+                "benchmark_drawdown": point.benchmark_drawdown,
+                "regime": point.regime,
+            })
+
 

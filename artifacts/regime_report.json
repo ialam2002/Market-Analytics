@@ -1,33 +1,42 @@
 {
-  "data_source": "synthetic-fallback",
-  "data_note": "live data unavailable, used synthetic fallback",
+  "data_source": "synthetic",
+  "data_note": "generated synthetic data",
   "latest_regime": {
     "day": "2026-05-22",
-    "regime": "RISK_ON",
-    "confidence": 0.9343
+    "regime": "TRANSITION",
+    "confidence": 0.55
   },
   "latest_tilt": {
     "day": "2026-05-22",
-    "regime": "RISK_ON",
-    "confidence": 0.9343,
-    "equity": 0.72,
-    "bonds": 0.22,
-    "cash": 0.06
+    "regime": "TRANSITION",
+    "confidence": 0.55,
+    "equity": 0.5,
+    "bonds": 0.38,
+    "cash": 0.12
   },
   "backtest": {
-    "start_day": "2025-11-04",
+    "start_day": "2025-07-27",
     "end_day": "2026-05-22",
-    "total_return": 0.030269,
-    "cagr": 0.038289,
-    "annualized_volatility": 0.097498,
-    "sharpe": 0.22735,
+    "total_return": 0.097318,
+    "cagr": 0.081133,
+    "annualized_volatility": 0.101193,
+    "sharpe": 0.622391,
     "max_drawdown": -0.067817,
-    "turnover": 16.28,
-    "transaction_cost_impact": 0.00814
+    "turnover": 26.4,
+    "transaction_cost_impact": 0.0132,
+    "benchmark_total_return": 0.37667,
+    "benchmark_cagr": 0.308028,
+    "benchmark_volatility": 0.200969,
+    "benchmark_sharpe": 1.336881,
+    "benchmark_max_drawdown": -0.127381,
+    "alpha": -0.044869,
+    "beta": 0.401421,
+    "information_ratio": -1.524554,
+    "excess_return": -0.226894
   },
   "regime_counts": {
-    "RISK_ON": 30,
-    "TRANSITION": 105,
-    "RISK_OFF": 65
+    "RISK_ON": 90,
+    "TRANSITION": 136,
+    "RISK_OFF": 74
   }
 }

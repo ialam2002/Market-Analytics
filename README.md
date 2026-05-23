@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO/actions/workflows/ci.yml)
 
+> ⚠️ **Replace** `YOUR_GITHUB_USERNAME/YOUR_REPO` in the badge URL above with your actual GitHub path.
+
 A recruiter-friendly finance + analytics + software engineering project.
 
 This app ingests market and macro data (synthetic, CSV, or public live feeds), computes finance features, classifies market regimes, backtests tactical allocations, and serves results through a local API and dashboard.
@@ -19,7 +21,7 @@ This app ingests market and macro data (synthetic, CSV, or public live feeds), c
 - `src/finproject/data_sources.py` - synthetic/CSV/live source adapters with fallback logic.
 - `src/finproject/analytics.py` - feature engineering and CSV export.
 - `src/finproject/regime.py` - regime classifier and allocation mapping.
-- `src/finproject/backtest.py` - tactical strategy backtest and performance metrics.
+- `src/finproject/backtest.py` - tactical strategy backtest, benchmark comparison, and performance metrics (`alpha`, `beta`, `IR`).
 - `src/finproject/service.py` - HTTP API and minimal dashboard.
 - `src/finproject/main.py` - CLI entry points.
 - `run.py` - convenient launcher.
@@ -57,9 +59,10 @@ Creates:
 
 - `artifacts/market_data.csv`
 - `artifacts/feature_frame.csv`
+- `artifacts/equity_curve.csv` ← **chart-ready**: day, strategy_equity, benchmark_equity, strategy_drawdown, benchmark_drawdown, regime
 - `artifacts/regime_report.json`
 
-The JSON report now includes backtest metrics (`CAGR`, `Sharpe`, `Max Drawdown`, turnover, and transaction-cost impact).
+The JSON report includes full backtest metrics (`CAGR`, `Sharpe`, `Max Drawdown`, `alpha`, `beta`, `information_ratio`, turnover, transaction-cost impact) for both strategy and benchmark.
 
 ## Run API and dashboard
 
@@ -74,6 +77,7 @@ API endpoints:
 - `GET /api/health`
 - `GET /api/latest`
 - `GET /api/backtest`
+- `GET /api/equity-curve` ← full day-by-day equity curve (strategy + benchmark)
 - `GET /api/regimes?limit=12`
 - `GET /api/tilts?limit=12`
 - `GET /api/meta`
@@ -88,9 +92,10 @@ API endpoints:
 
 - Built an end-to-end market regime analytics platform combining data ingestion, feature engineering, interpretable risk-state modeling, and tactical allocation recommendations.
 - Implemented multi-source market data adapters (synthetic, CSV, and public live feeds) with graceful fallback logic for reproducible local demos.
-- Developed a regime-driven backtest engine with transaction costs and performance analytics (CAGR, Sharpe, volatility, max drawdown, turnover).
-- Designed and shipped a Python API + dashboard exposing live regime signals, backtest metrics, and portfolio tilt recommendations.
-- Added automated CI with GitHub Actions and a reproducible unit test suite to validate core analytics and data-loading paths.
+- Developed a regime-driven backtest engine with transaction costs and full performance analytics (CAGR, Sharpe, volatility, max drawdown, alpha, beta, information ratio) relative to a benchmark.
+- Computed day-by-day equity curves and drawdown series for both strategy and benchmark, exportable as chart-ready CSV.
+- Designed and shipped a Python API + dashboard with Canvas line charts comparing strategy vs benchmark, live regime signal cards, and portfolio tilt recommendations.
+- Added automated CI with GitHub Actions and a test suite covering data loading, feature engineering, backtest metrics, and equity curve structure.
 
 ## Stretch upgrades (next)
 
