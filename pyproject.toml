@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finproject-market-regime"
+version = "0.1.0"
+description = "Portfolio-ready market regime analytics platform using only Python standard library"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Iftekhar Alam" }]
+dependencies = []
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
