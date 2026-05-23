@@ -3,24 +3,39 @@ from __future__ import annotations
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .analytics import build_feature_frame
+from .backtest import run_regime_backtest
+from .data_sources import load_market_data
 from .regime import build_portfolio_tilts, classify_regimes
-from .synthetic_data import generate_market_data
 
 
-def build_snapshot(days: int = 756, seed: int = 7) -> dict[str, Any]:
-    rows = generate_market_data(days=days, seed=seed)
+def build_snapshot(
+    days: int = 756,
+    seed: int = 7,
+    data_source: str = "synthetic",
+    csv_file: Path | None = None,
+) -> dict[str, Any]:
+    loaded = load_market_data(source=data_source, days=days, seed=seed, csv_file=csv_file)
+    rows = loaded.rows
     features = build_feature_frame(rows)
     regimes = classify_regimes(features)
     tilts = build_portfolio_tilts(regimes)
+    backtest = run_regime_backtest(features, tilts)
 
     return {
+        "meta": {
+            "source": loaded.source_used,
+            "note": loaded.note,
+            "rows": len(rows),
+        },
         "features": features,
         "regimes": [r.__dict__ for r in regimes],
         "tilts": tilts,
+        "backtest": backtest.__dict__,
         "latest": {
             "feature": features[-1],
             "regime": regimes[-1].__dict__,
@@ -49,6 +64,7 @@ def _dashboard_html() -> str:
     <div class='card'><h3>Latest Regime</h3><div id='regime'>Loading...</div></div>
     <div class='card'><h3>Model Confidence</h3><div id='confidence'>Loading...</div></div>
     <div class='card'><h3>Portfolio Tilt</h3><div id='tilt'>Loading...</div></div>
+    <div class='card'><h3>Backtest (CAGR / Sharpe)</h3><div id='backtest'>Loading...</div></div>
   </div>
   <div class='card'>
     <h3>Recent Regimes</h3>
@@ -58,6 +74,7 @@ def _dashboard_html() -> str:
     async function loadData() {
       const latest = await fetch('/api/latest').then(r => r.json());
       const history = await fetch('/api/regimes?limit=12').then(r => r.json());
+      const backtest = await fetch('/api/backtest').then(r => r.json());
 
       document.getElementById('regime').textContent = latest.regime.regime;
       document.getElementById('confidence').textContent = (latest.regime.confidence * 100).toFixed(1) + '%';
@@ -65,6 +82,8 @@ def _dashboard_html() -> str:
         'Equity ' + (latest.tilt.equity * 100).toFixed(0) + '% | ' +
         'Bonds ' + (latest.tilt.bonds * 100).toFixed(0) + '% | ' +
         'Cash ' + (latest.tilt.cash * 100).toFixed(0) + '%';
+      document.getElementById('backtest').textContent =
+        (backtest.cagr * 100).toFixed(2) + '% / ' + backtest.sharpe.toFixed(2);
       document.getElementById('history').textContent = JSON.stringify(history.items, null, 2);
     }
     loadData();
@@ -107,6 +126,10 @@ def create_handler(snapshot: dict[str, Any]) -> type[BaseHTTPRequestHandler]:
                 self._json(snapshot["latest"])
                 return
 
+            if parsed.path == "/api/backtest":
+                self._json(snapshot["backtest"])
+                return
+
             if parsed.path == "/api/regimes":
                 qs = parse_qs(parsed.query)
                 limit = int(qs.get("limit", [20])[0])
@@ -121,6 +144,10 @@ def create_handler(snapshot: dict[str, Any]) -> type[BaseHTTPRequestHandler]:
                 self._json({"items": items, "count": len(items)})
                 return
 
+            if parsed.path == "/api/meta":
+                self._json(snapshot["meta"])
+                return
+
             self._json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
         def log_message(self, _format: str, *_args: object) -> None:
@@ -129,11 +156,18 @@ def create_handler(snapshot: dict[str, Any]) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000, days: int = 756, seed: int = 7) -> None:
-    snapshot = build_snapshot(days=days, seed=seed)
+def run_server(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    days: int = 756,
+    seed: int = 7,
+    data_source: str = "synthetic",
+    csv_file: Path | None = None,
+) -> None:
+    snapshot = build_snapshot(days=days, seed=seed, data_source=data_source, csv_file=csv_file)
     handler = create_handler(snapshot)
     server = ThreadingHTTPServer((host, port), handler)  # type: ignore[arg-type]
     print(f"Server running at http://{host}:{port}")
-    print("API endpoints: /api/health, /api/latest, /api/regimes, /api/tilts")
+    print("API endpoints: /api/health, /api/latest, /api/backtest, /api/regimes, /api/tilts, /api/meta")
     server.serve_forever()
 

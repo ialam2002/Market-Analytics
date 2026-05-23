@@ -14,12 +14,14 @@ analytics = importlib.import_module("finproject.analytics")
 regime = importlib.import_module("finproject.regime")
 service = importlib.import_module("finproject.service")
 synthetic_data = importlib.import_module("finproject.synthetic_data")
+backtest = importlib.import_module("finproject.backtest")
 
 build_feature_frame = analytics.build_feature_frame
 build_portfolio_tilts = regime.build_portfolio_tilts
 classify_regimes = regime.classify_regimes
 build_snapshot = service.build_snapshot
 generate_market_data = synthetic_data.generate_market_data
+run_regime_backtest = backtest.run_regime_backtest
 
 
 class PipelineTests(unittest.TestCase):
@@ -50,7 +52,19 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("latest", snapshot)
         self.assertIn("regimes", snapshot)
         self.assertIn("tilts", snapshot)
+        self.assertIn("backtest", snapshot)
+        self.assertIn("meta", snapshot)
         self.assertIn("regime", snapshot["latest"])
+
+    def test_backtest_metrics_in_range(self) -> None:
+        rows = generate_market_data(days=300, seed=9)
+        features = build_feature_frame(rows)
+        regimes = classify_regimes(features)
+        tilts = build_portfolio_tilts(regimes)
+        report = run_regime_backtest(features, tilts)
+
+        self.assertGreaterEqual(report.annualized_volatility, 0.0)
+        self.assertLessEqual(report.max_drawdown, 0.0)
 
 
 if __name__ == "__main__":
