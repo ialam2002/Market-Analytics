@@ -14,6 +14,8 @@ from .synthetic_data import MarketRow, generate_market_data
 
 @dataclass(frozen=True)
 class LoadResult:
+    """Result of a load_market_data call, including the source that was actually used."""
+
     rows: list[MarketRow]
     source_used: str
     note: str
@@ -24,6 +26,7 @@ def _parse_iso_day(value: str) -> date:
 
 
 def _parse_stooq_series(csv_text: str) -> dict[date, float]:
+    """Parse a Stooq daily CSV into a date → close-price mapping."""
     reader = csv.DictReader(io.StringIO(csv_text))
     out: dict[date, float] = {}
 
@@ -40,6 +43,7 @@ def _parse_stooq_series(csv_text: str) -> dict[date, float]:
 
 
 def _parse_fred_series(csv_text: str, key: str) -> dict[date, float]:
+    """Parse a FRED CSV into a date → value mapping, skipping missing observations ('.')."""
     reader = csv.DictReader(io.StringIO(csv_text))
     out: dict[date, float] = {}
 
@@ -65,6 +69,7 @@ def _rows_from_series(
     rate_10y: dict[date, float],
     days: int,
 ) -> list[MarketRow]:
+    """Align four date-keyed series on their common trading days and return the last N rows."""
     common_days = sorted(set(price) & set(benchmark) & set(vix) & set(rate_10y))
     if not common_days:
         return []
@@ -83,6 +88,11 @@ def _rows_from_series(
 
 
 def _load_live_public(days: int) -> list[MarketRow]:
+    """Fetch SPY (price series), SPX (benchmark), VIXCLS, and DGS10 from public feeds.
+
+    SPY daily closes come from Stooq. VIX and 10Y Treasury yield come from the
+    St. Louis Fed (FRED). All four series are then aligned on common trading days.
+    """
     spy = _parse_stooq_series(_download_text("https://stooq.com/q/d/l/?s=spy.us&i=d"))
     spx = _parse_stooq_series(_download_text("https://stooq.com/q/d/l/?s=%5Espx&i=d"))
     vix = _parse_fred_series(
@@ -97,6 +107,11 @@ def _load_live_public(days: int) -> list[MarketRow]:
 
 
 def _load_csv_file(csv_file: Path, days: int) -> list[MarketRow]:
+    """Load market rows from a local CSV file.
+
+    Expected columns: day (YYYY-MM-DD), price, benchmark, vix, rate_10y.
+    Rows are sorted chronologically before slicing the last N days.
+    """
     with csv_file.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         rows: list[MarketRow] = []
@@ -123,7 +138,15 @@ def load_market_data(
     csv_file: Path | None = None,
     live_loader: Callable[[int], list[MarketRow]] | None = None,
 ) -> LoadResult:
-    """Load market rows from synthetic, CSV, or public live feeds with fallback."""
+    """Load market rows from one of three sources, with automatic fallback for live mode.
+
+    source='synthetic'  — deterministic generated data; useful for tests and demos
+    source='csv'        — load from a local file; csv_file is required
+    source='live'       — attempt to fetch from Stooq/FRED; falls back to synthetic
+                          on any network error or if fewer than 60 rows are returned
+
+    live_loader can be injected for testing to replace the real network call.
+    """
     normalized = source.strip().lower()
 
     if normalized == "synthetic":

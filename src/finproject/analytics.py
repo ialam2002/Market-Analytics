@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 
 def _pct_change(values: list[float]) -> list[float | None]:
+    """Return period-over-period returns; first element is None (no prior period)."""
     out: list[float | None] = [None]
     for i in range(1, len(values)):
         prev = values[i - 1]
@@ -21,6 +22,7 @@ def _pct_change(values: list[float]) -> list[float | None]:
 
 
 def _rolling(values: list[float], window: int, fn) -> list[float | None]:
+    """Apply fn to each rolling window; returns None until the window is full."""
     out: list[float | None] = []
     for idx in range(len(values)):
         if idx + 1 < window:
@@ -32,6 +34,7 @@ def _rolling(values: list[float], window: int, fn) -> list[float | None]:
 
 
 def _rolling_drawdown(values: list[float], window: int) -> list[float | None]:
+    """Return the drawdown from the rolling window peak; negative value means below peak."""
     out: list[float | None] = []
     for idx in range(len(values)):
         if idx + 1 < window:
@@ -44,7 +47,15 @@ def _rolling_drawdown(values: list[float], window: int) -> list[float | None]:
 
 
 def build_feature_frame(rows: list[MarketRow]) -> list[dict[str, float | str | None]]:
-    """Compute finance features that are common in risk/regime systems."""
+    """Build a list of per-day feature dicts from raw market rows.
+
+    Features computed:
+        return_1d      — daily log-linear return of the price series
+        momentum_20    — 20-day price return (close-to-close, 4-week window)
+        volatility_20  — 20-day population std dev of daily returns
+        drawdown_60    — drawdown from the 60-day rolling peak
+        price_vs_ma50  — price deviation above/below the 50-day simple moving average
+    """
     prices = [r.price for r in rows]
     returns = _pct_change(prices)
     clean_returns = [0.0 if x is None else x for x in returns]
@@ -77,6 +88,7 @@ def build_feature_frame(rows: list[MarketRow]) -> list[dict[str, float | str | N
 
 
 def export_rows_csv(rows: list[MarketRow], output_file: Path) -> None:
+    """Write raw market rows to a CSV file."""
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["day", "price", "benchmark", "vix", "rate_10y"])
@@ -86,6 +98,7 @@ def export_rows_csv(rows: list[MarketRow], output_file: Path) -> None:
 
 
 def export_features_csv(frame: list[dict[str, float | str | None]], output_file: Path) -> None:
+    """Write the feature frame to a CSV file."""
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("w", newline="", encoding="utf-8") as handle:
         fieldnames = list(frame[0].keys()) if frame else []
@@ -95,7 +108,12 @@ def export_features_csv(frame: list[dict[str, float | str | None]], output_file:
 
 
 def export_equity_curve_csv(curve: list[EquityCurvePoint], output_file: Path) -> None:
-    """Export day-by-day strategy vs benchmark equity curve for charting."""
+    """Write the daily equity curve to a chart-ready CSV.
+
+    Columns: day, strategy_equity, benchmark_equity, strategy_drawdown,
+             benchmark_drawdown, regime. Both equity columns are rebased to 1.0
+    at the start of the period.
+    """
     output_file.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["day", "strategy_equity", "benchmark_equity", "strategy_drawdown", "benchmark_drawdown", "regime"]
     with output_file.open("w", newline="", encoding="utf-8") as handle:
@@ -110,5 +128,4 @@ def export_equity_curve_csv(curve: list[EquityCurvePoint], output_file: Path) ->
                 "benchmark_drawdown": point.benchmark_drawdown,
                 "regime": point.regime,
             })
-
 

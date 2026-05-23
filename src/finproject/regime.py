@@ -5,8 +5,10 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RegimePoint:
+    """Regime classification for a single trading day."""
+
     day: str
-    regime: str
+    regime: str  # RISK_ON | TRANSITION | RISK_OFF
     confidence: float
 
 
@@ -15,7 +17,19 @@ def _safe(value: float | None, fallback: float = 0.0) -> float:
 
 
 def classify_regimes(feature_frame: list[dict[str, float | str | None]]) -> list[RegimePoint]:
-    """Simple interpretable classifier for market risk regime detection."""
+    """Classify each day into one of three market regimes.
+
+    Uses a rule-based approach for interpretability. The thresholds were chosen
+    to match typical risk-on / stress conditions rather than fitted to data:
+
+        RISK_ON   — positive momentum (>1.5%), low realised vol (<1.4% daily),
+                    shallow drawdown (>-9%), and VIX below 24
+        RISK_OFF  — negative momentum, elevated vol, deep drawdown, or VIX above 30
+        TRANSITION — everything in between
+
+    Confidence is a heuristic score in [0, 1] that scales with the strength of the
+    signals — useful for the dashboard but not a calibrated probability.
+    """
     output: list[RegimePoint] = []
 
     for row in feature_frame:
@@ -24,10 +38,10 @@ def classify_regimes(feature_frame: list[dict[str, float | str | None]]) -> list
         d60 = _safe(row["drawdown_60"] if isinstance(row["drawdown_60"], float) else None)
         vix = _safe(row["vix"] if isinstance(row["vix"], float) else None, fallback=20.0)
 
-        if (m20 > 0.015 and v20 < 0.014 and d60 > -0.09 and vix < 24.0):
+        if m20 > 0.015 and v20 < 0.014 and d60 > -0.09 and vix < 24.0:
             regime = "RISK_ON"
             confidence = min(1.0, 0.55 + m20 * 8.0)
-        elif (m20 < -0.01 or v20 > 0.022 or d60 < -0.13 or vix > 30.0):
+        elif m20 < -0.01 or v20 > 0.022 or d60 < -0.13 or vix > 30.0:
             regime = "RISK_OFF"
             confidence = min(1.0, 0.6 + abs(m20) * 6.0 + max(0.0, v20 - 0.02) * 8.0)
         else:
@@ -40,7 +54,16 @@ def classify_regimes(feature_frame: list[dict[str, float | str | None]]) -> list
 
 
 def build_portfolio_tilts(regimes: list[RegimePoint]) -> list[dict[str, float | str]]:
-    """Map regimes to tactical allocations to show business use-case value."""
+    """Map each regime to a static three-asset allocation (equity / bonds / cash).
+
+    Allocations are deliberately simple to keep the focus on the regime signal
+    itself. A proper implementation would layer in client risk tolerance,
+    position limits, and rebalancing costs.
+
+        RISK_ON:    72% equity, 22% bonds, 6% cash
+        TRANSITION: 50% equity, 38% bonds, 12% cash
+        RISK_OFF:   28% equity, 52% bonds, 20% cash
+    """
     tilts: list[dict[str, float | str]] = []
 
     for point in regimes:
@@ -63,4 +86,3 @@ def build_portfolio_tilts(regimes: list[RegimePoint]) -> list[dict[str, float | 
         )
 
     return tilts
-

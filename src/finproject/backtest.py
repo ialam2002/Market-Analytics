@@ -3,10 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+# ~2% annualised compounded continuously, approximated as a daily rate.
+_RISK_FREE_DAILY = 0.00008
+
 
 @dataclass(frozen=True)
 class BacktestReport:
-    # ── strategy ─────────────────────────────────────────────────────────
+    """Full performance report comparing the strategy against a benchmark.
+
+    All return and drawdown metrics are expressed as decimals (0.12 = 12%).
+    Volatility is annualised. Sharpe and information ratio use 252 trading
+    days per year. Alpha and beta are from a standard OLS regression of daily
+    excess returns.
+    """
+
+    # strategy
     start_day: str
     end_day: str
     total_return: float
@@ -14,38 +25,45 @@ class BacktestReport:
     annualized_volatility: float
     sharpe: float
     max_drawdown: float
-    turnover: float
+    turnover: float              # sum of absolute weight changes over the period
     transaction_cost_impact: float
-    # ── benchmark ────────────────────────────────────────────────────────
+
+    # benchmark
     benchmark_total_return: float
     benchmark_cagr: float
     benchmark_volatility: float
     benchmark_sharpe: float
     benchmark_max_drawdown: float
-    # ── relative metrics ─────────────────────────────────────────────────
-    alpha: float           # annualised Jensen's alpha (strategy - beta*benchmark excess)
-    beta: float            # market beta of strategy vs benchmark
-    information_ratio: float  # active return / tracking error
-    excess_return: float   # strategy_cagr - benchmark_cagr
+
+    # relative
+    alpha: float                 # annualised Jensen's alpha
+    beta: float                  # OLS beta vs benchmark
+    information_ratio: float     # active return / tracking error
+    excess_return: float         # strategy CAGR minus benchmark CAGR
 
 
 @dataclass(frozen=True)
 class EquityCurvePoint:
+    """Strategy and benchmark equity values for one day, rebased to 1.0 at the start."""
+
     day: str
-    strategy_equity: float      # rebased to 1.0 at start
-    benchmark_equity: float     # rebased to 1.0 at start
-    strategy_drawdown: float    # running drawdown from peak
+    strategy_equity: float
+    benchmark_equity: float
+    strategy_drawdown: float    # drawdown from running peak, always <= 0
     benchmark_drawdown: float
     regime: str
 
 
 @dataclass(frozen=True)
 class BacktestResult:
+    """Container returned by run_regime_backtest."""
+
     report: BacktestReport
     equity_curve: list[EquityCurvePoint]
 
 
 def _pct_change(values: list[float]) -> list[float]:
+    """Return period-over-period returns; first element is 0.0 (no prior period)."""
     out: list[float] = [0.0]
     for idx in range(1, len(values)):
         out.append((values[idx] / values[idx - 1]) - 1.0)
@@ -53,6 +71,7 @@ def _pct_change(values: list[float]) -> list[float]:
 
 
 def _max_drawdown(returns: list[float]) -> float:
+    """Return the maximum peak-to-trough drawdown of the return series."""
     equity = 1.0
     peak = 1.0
     max_dd = 0.0
@@ -65,6 +84,7 @@ def _max_drawdown(returns: list[float]) -> float:
 
 
 def _drawdown_series(returns: list[float]) -> list[float]:
+    """Return the running drawdown from peak for each period."""
     equity = 1.0
     peak = 1.0
     out: list[float] = []
@@ -76,6 +96,7 @@ def _drawdown_series(returns: list[float]) -> list[float]:
 
 
 def _equity_series(returns: list[float]) -> list[float]:
+    """Return the cumulative equity curve rebased to 1.0."""
     equity = 1.0
     out: list[float] = []
     for ret in returns:
@@ -84,15 +105,18 @@ def _equity_series(returns: list[float]) -> list[float]:
     return out
 
 
-def _ann_stats(returns: list[float], risk_free_daily: float = 0.00008) -> tuple[float, float, float]:
-    """Return (annualised_vol, annualised_sharpe, annualised_mean_excess)."""
+def _ann_stats(returns: list[float]) -> tuple[float, float, float]:
+    """Return (annualised volatility, Sharpe ratio, annualised excess return).
+
+    Uses population variance and scales by sqrt(252).
+    """
     n = len(returns)
     if n == 0:
         return 0.0, 0.0, 0.0
     mean_r = sum(returns) / n
     variance = sum((r - mean_r) ** 2 for r in returns) / n
     ann_vol = float(math.sqrt(variance) * math.sqrt(252.0))
-    excess = (mean_r - risk_free_daily) * 252.0
+    excess = (mean_r - _RISK_FREE_DAILY) * 252.0
     sharpe = 0.0 if ann_vol == 0 else excess / ann_vol
     return ann_vol, sharpe, excess
 
@@ -100,28 +124,30 @@ def _ann_stats(returns: list[float], risk_free_daily: float = 0.00008) -> tuple[
 def _beta_alpha(
     strategy_returns: list[float],
     benchmark_returns: list[float],
-    risk_free_daily: float = 0.00008,
 ) -> tuple[float, float]:
-    """OLS beta and annualised Jensen's alpha."""
+    """Return (OLS beta, annualised Jensen's alpha) for the strategy vs benchmark.
+
+    Both series are converted to excess returns before the regression.
+    """
     n = len(strategy_returns)
     if n < 2:
         return 1.0, 0.0
 
-    s_excess = [r - risk_free_daily for r in strategy_returns]
-    b_excess = [r - risk_free_daily for r in benchmark_returns]
+    s_excess = [r - _RISK_FREE_DAILY for r in strategy_returns]
+    b_excess = [r - _RISK_FREE_DAILY for r in benchmark_returns]
 
+    mean_s = sum(s_excess) / n
     mean_b = sum(b_excess) / n
-    cov = sum((s_excess[i] - sum(s_excess) / n) * (b_excess[i] - mean_b) for i in range(n)) / n
+    cov = sum((s_excess[i] - mean_s) * (b_excess[i] - mean_b) for i in range(n)) / n
     var_b = sum((b - mean_b) ** 2 for b in b_excess) / n
 
     beta = 0.0 if var_b == 0 else cov / var_b
-    ann_s_excess = (sum(s_excess) / n) * 252.0
-    ann_b_excess = (sum(b_excess) / n) * 252.0
-    alpha = ann_s_excess - beta * ann_b_excess
+    alpha = (mean_s - beta * mean_b) * 252.0
     return round(beta, 6), round(alpha, 6)
 
 
 def _information_ratio(strategy_returns: list[float], benchmark_returns: list[float]) -> float:
+    """Return the annualised information ratio (active return / tracking error)."""
     n = len(strategy_returns)
     if n < 2:
         return 0.0
@@ -137,7 +163,17 @@ def run_regime_backtest(
     tilts: list[dict[str, float | str]],
     transaction_cost_bps: float = 5.0,
 ) -> BacktestResult:
-    """Backtest tactical weights; returns report + daily equity curve for charting."""
+    """Backtest the regime-driven tactical strategy against a buy-and-hold benchmark.
+
+    Weights from day t-1 are applied to day t returns, which eliminates any
+    forward-looking bias. Bonds are proxied by a constant modified duration of
+    7.5 applied to the daily 10Y rate change. Cash earns the risk-free rate.
+    Transaction costs are charged proportional to the absolute weight change
+    (one-way, in basis points).
+
+    Returns a BacktestResult containing the summary report and a daily equity
+    curve for both the strategy and the benchmark.
+    """
     if len(feature_frame) < 3:
         raise ValueError("Need at least 3 rows for backtest")
 
@@ -162,10 +198,11 @@ def run_regime_backtest(
         rate_today = float(today["rate_10y"])
         rate_yesterday = float(yesterday["rate_10y"])
 
-        # Approximate long-duration bond ETF return from rate move (modified duration ≈ 7.5).
+        # Modified-duration approximation: ΔP/P ≈ -D * Δy, D = 7.5, y in percent.
         bond_ret = -7.5 * (rate_today - rate_yesterday) / 100.0
-        cash_ret = 0.00008
+        cash_ret = _RISK_FREE_DAILY
 
+        # Use yesterday's regime tilt (avoids lookahead).
         traded_tilt = {
             "equity": float(tilts[idx - 1]["equity"]),
             "bonds": float(tilts[idx - 1]["bonds"]),
@@ -191,20 +228,19 @@ def run_regime_backtest(
         total_cost += cost
         prev_tilt = traded_tilt
 
-    # ── strategy metrics ──────────────────────────────────────────────────
+    # ── strategy ──────────────────────────────────────────────────────────
     n = len(strategy_returns)
     total_return = math.prod(1.0 + r for r in strategy_returns) - 1.0
     years = max(1.0 / 252.0, n / 252.0)
     cagr = (1.0 + total_return) ** (1.0 / years) - 1.0
-
     ann_vol, sharpe, _ = _ann_stats(strategy_returns)
 
-    # ── benchmark metrics ─────────────────────────────────────────────────
+    # ── benchmark ─────────────────────────────────────────────────────────
     bm_total_return = math.prod(1.0 + r for r in benchmark_returns) - 1.0
     bm_cagr = (1.0 + bm_total_return) ** (1.0 / years) - 1.0
     bm_ann_vol, bm_sharpe, _ = _ann_stats(benchmark_returns)
 
-    # ── relative metrics ──────────────────────────────────────────────────
+    # ── relative ──────────────────────────────────────────────────────────
     beta, alpha = _beta_alpha(strategy_returns, benchmark_returns)
     ir = _information_ratio(strategy_returns, benchmark_returns)
 

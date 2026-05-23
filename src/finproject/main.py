@@ -12,6 +12,11 @@ from .service import run_server
 
 
 def run_build(days: int, seed: int, out_dir: Path, data_source: str, csv_file: Path | None) -> None:
+    """Run the full pipeline and write artifacts to out_dir.
+
+    Outputs: market_data.csv, feature_frame.csv, equity_curve.csv,
+    and regime_report.json (includes backtest metrics).
+    """
     loaded = load_market_data(source=data_source, days=days, seed=seed, csv_file=csv_file)
     rows = loaded.rows
     frame = build_feature_frame(rows)
@@ -46,6 +51,7 @@ def run_build(days: int, seed: int, out_dir: Path, data_source: str, csv_file: P
 
 
 def run_demo(days: int, seed: int, data_source: str, csv_file: Path | None) -> None:
+    """Print the latest regime, allocation tilt, and a backtest summary to stdout."""
     loaded = load_market_data(source=data_source, days=days, seed=seed, csv_file=csv_file)
     rows = loaded.rows
     frame = build_feature_frame(rows)
@@ -80,34 +86,35 @@ def run_demo(days: int, seed: int, data_source: str, csv_file: Path | None) -> N
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Market regime analytics portfolio project")
+    """Build and return the top-level argument parser with demo/build/api subcommands."""
+    parser = argparse.ArgumentParser(description="Market regime analytics — regime signals, backtest, and dashboard")
 
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common_options(command_parser: argparse.ArgumentParser) -> None:
-        command_parser.add_argument("--days", type=int, default=756)
-        command_parser.add_argument("--seed", type=int, default=7)
+        command_parser.add_argument("--days", type=int, default=756, help="Number of trading days to use")
+        command_parser.add_argument("--seed", type=int, default=7, help="Random seed for synthetic data")
         command_parser.add_argument(
             "--data-source",
             choices=["synthetic", "csv", "live"],
             default="synthetic",
-            help="Data source for market rows",
+            help="Where to load market data from",
         )
         command_parser.add_argument(
             "--csv-file",
             type=Path,
             default=None,
-            help="Path to CSV containing day,price,benchmark,vix,rate_10y",
+            help="Path to local CSV (required when --data-source csv)",
         )
 
-    demo = sub.add_parser("demo", help="Print latest regime and allocation")
+    demo = sub.add_parser("demo", help="Print the latest regime, tilt, and backtest summary")
     add_common_options(demo)
 
-    build = sub.add_parser("build", help="Export data artifacts as CSV/JSON")
+    build = sub.add_parser("build", help="Export CSV and JSON artifacts to disk")
     add_common_options(build)
-    build.add_argument("--out-dir", type=Path, default=Path("artifacts"))
+    build.add_argument("--out-dir", type=Path, default=Path("artifacts"), help="Output directory")
 
-    api = sub.add_parser("api", help="Run API and dashboard server")
+    api = sub.add_parser("api", help="Start the local API server and dashboard")
     add_common_options(api)
     api.add_argument("--host", default="127.0.0.1")
     api.add_argument("--port", type=int, default=8000)

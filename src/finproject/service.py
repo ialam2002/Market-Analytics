@@ -19,6 +19,11 @@ def build_snapshot(
     data_source: str = "synthetic",
     csv_file: Path | None = None,
 ) -> dict[str, Any]:
+    """Run the full pipeline and return all data needed to serve the API.
+
+    The snapshot is built once at server startup and held in memory. Endpoints
+    serve slices of this dict rather than recomputing on each request.
+    """
     loaded = load_market_data(source=data_source, days=days, seed=seed, csv_file=csv_file)
     rows = loaded.rows
     features = build_feature_frame(rows)
@@ -261,6 +266,7 @@ def _dashboard_html() -> str:
 
 
 def create_handler(snapshot: dict[str, Any]) -> type[BaseHTTPRequestHandler]:
+    """Return a request handler class closed over the pre-built snapshot dict."""
     class Handler(BaseHTTPRequestHandler):
         def _json(self, payload: dict[str, Any], status: int = HTTPStatus.OK) -> None:
             body = json.dumps(payload).encode("utf-8")
@@ -325,6 +331,7 @@ def create_handler(snapshot: dict[str, Any]) -> type[BaseHTTPRequestHandler]:
             self._json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
         def log_message(self, _format: str, *_args: object) -> None:
+            # Suppress the default per-request stdout logging.
             return
 
     return Handler
@@ -338,6 +345,7 @@ def run_server(
     data_source: str = "synthetic",
     csv_file: Path | None = None,
 ) -> None:
+    """Build the snapshot and start a multi-threaded HTTP server."""
     snapshot = build_snapshot(days=days, seed=seed, data_source=data_source, csv_file=csv_file)
     handler = create_handler(snapshot)
     server = ThreadingHTTPServer((host, port), handler)  # type: ignore[arg-type]
